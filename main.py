@@ -24,194 +24,6 @@ from networks.encoder_QIH import _netE
 from networks.netG import _netG
 from networks.encoder_QBot import _netE as _netQE
 from arguments import get_args
-import train
-import evaluate
-
-opt = get_args()
-opt.manualSeed = random.randint(1, 10000)
-random.seed(opt.manualSeed)
-torch.manual_seed(opt.manualSeed)
-np.random.seed(opt.manualSeed)
-if opt.cuda:
-    torch.cuda.manual_seed_all(opt.manualSeed)
-
-if torch.cuda.is_available() and not opt.cuda:
-    print("WARNING: You have a CUDA device, so you should probably run with --cuda")
-
-t = datetime.datetime.now()
-cur_time = '%s-%s-%s' %(t.day, t.month, t.hour)
-save_path = os.path.join(opt.outf, cur_time)
-try:
-    os.makedirs(save_path)
-except OSError:
-    pass
-
-dataset,dataset_val,dataloader,dataloader_val = create_dataloader(opt)
-writer = SummaryWriter(save_path)
-
-opt.vocab_size = dataset.vocab_size
-opt.ques_length = dataset.ques_length
-opt.ans_length = dataset.ans_length + 1
-opt.his_length = dataset.ans_length  + dataset.ques_length
-opt.cap_length = dataset.cap_length
-itow = dataset.itow
-
-qbots = []
-abots = []
-print('Initializing A-Bot and Q-Bot...')
-for j in range(opt.num_abots):
-    abots.append((_netE(opt.model, opt.ninp, opt.nhid, opt.nlayers, opt.dropout, img_feat_size),
-                 model._netW(vocab_size, opt.ninp, opt.dropout),
-                _netG(opt.model, vocab_size, opt.ninp, opt.nhid, opt.nlayers, opt.dropout)))
-for j in  range(opt.num_qbots):
-    qbots.append((_netQE(opt.model, opt.ninp, opt.nhid, opt.nlayers, opt.dropout),
-                model._netW(vocab_size, opt.ninp, opt.dropout),
-                _netG(opt.model, vocab_size, opt.ninp, opt.nhid, opt.nlayers, opt.dropout)))
-critLM = model.LMCriterion()
-critImg = torch.nn.MSELoss()
-
-if opt.model_path != '':
-    print("=> loading checkpoint '{}'".format(opt.model_path))
-    checkpoint = torch.load(opt.model_path, map_location=lambda storage, loc: storage)
-
-    if opt.scratch:
-        pass
-    elif opt.curr:
-        print('Loading A and Q-Bots from SL')
-        for j in range(opt.num_abots):
-            load_my_state_dict(abots[j][1],checkpoint['netWA'])
-            load_my_state_dict(abots[j][0],checkpoint['netEA'])
-            load_my_state_dict(abots[j][2],checkpoint['netGA'])
-        for j in range(opt.num_qbots):
-            load_my_state_dict(qbots[j][1],checkpoint['netWQ'])
-            load_my_state_dict(qbots[j][0],checkpoint['netEQ'])
-            load_my_state_dict(qbots[j][2],checkpoint['netGQ'])
-    else:
-        print('Loading A and Q-Bots from RL')
-        for j in range(opt.num_abots):
-            load_my_state_dict(abots[j][1],checkpoint['netWA'+str(j)])
-            load_my_state_dict(abots[j][0],checkpoint['netEA'+str(j)])
-            load_my_state_dict(abots[j][2],checkpoint['netGA'+str(j)])
-        for j in range(opt.num_qbots):
-            load_my_state_dict(qbots[j][1],checkpoint['netWQ'+str(j)])
-            load_my_state_dict(qbots[j][0],checkpoint['netEQ'+str(j)])
-            load_my_state_dict(qbots[j][2],checkpoint['netGQ'+str(j)])
-
-else:
-    assert not opt.eval and opt.scratch, "Must specify model files if not starting evaluating or training from scratch"
-
-if opt.cuda: # ship to cuda, if has GPU
-    for k in range(opt.num_abots):
-        abots[k][0].cuda(),abots[k][1].cuda(),abots[k][2].cuda()
-    for k in range(opt.num_qbots):
-        qbots[k][0].cuda(),qbots[k][1].cuda(),qbots[k][2].cuda()
-    critLM.cuda(), critImg.cuda()
-
-if not opt.eval:
-    optimizerAbotSLarr = []
-    optimizerQbotSLarr = []
-    optimizerAbotRLarr = []
-    optimizerQbotRLarr = []
-    for j in range(opt.num_abots):
-        optimizerAbotSLarr.append(optim.Adam([{'params': abots[j][1].parameters()},
-                              {'params': abots[j][0].parameters()},
-                              {'params': abots[j][2].parameters()}], lr=opt.A_lr, betas=(opt.beta1, 0.999)))
-
-    for j in range(opt.num_qbots):
-        optimizerQbotSLarr.append(optim.Adam([{'params': qbots[j][1].parameters()},
-                              {'params': qbots[j][0].parameters()},
-                              {'params': qbots[j][2].parameters()}], lr=opt.Q_lr, betas=(opt.beta1, 0.999)))
-
-    for j in range(opt.num_abots):
-        optimizerAbotRLarr.append(optim.Adam([{'params': abots[j][1].parameters()},
-                              {'params': abots[j][0].parameters()},
-                              {'params': abots[j][2].parameters()}], lr=opt.A_lr, betas=(opt.beta1, 0.999)))
-
-    for j in range(opt.num_qbots):
-        optimizerQbotRLarr.append(optim.Adam([{'params': qbots[j][1].parameters()},
-                              {'params': qbots[j][0].parameters()},
-                              {'params': qbots[j][2].parameters()}], lr=opt.Q_lr, betas=(opt.beta1, 0.999)))
-
-    for k in range(opt.num_abots):
-        abots[k][0].train(),abots[k][1].train(),abots[k][2].train()
-    for k in range(opt.num_qbots):
-        qbots[k][0].train(),qbots[k][1].train(),qbots[k][2].train()
-
-    k_curr = 10
-    for epoch in range(opt.start_epoch+1, opt.niter):
-        if opt.k_curr is not None:
-            k_curr = opt.k_curr
-        elif opt.scratch:
-            if epoch>15:
-                k_curr -= 1
-            elif opt.curr:
-                k_curr -= 1
-        k_curr = max(0,k_curr)
-        print("Starting Epoch: {} | K: {}".format(epoch,k_curr))
-        t = time.time()
-        im_loss_epoch_n = train(epoch,k_curr)
-        print("Finished Epoch: {} | K: {} | Time: {:.3f}".format(epoch,k_curr,time.time()-t))
-
-        if epoch%opt.save_iter == 0 and not opt.no_save:
-            savedict = {'epoch': epoch,
-                    'k': k,
-                    'opt': opt}
-            for k in range(len(abots)):
-                savedict['netWA'+str(k)] = abots[k][1].state_dict()
-                savedict['netEA'+str(k)] = abots[k][0].state_dict()
-                savedict['netGA'+str(k)] = abots[k][2].state_dict()
-            for k in range(len(qbots)):
-                savedict['netWQ'+str(k)] = qbots[k][1].state_dict()
-                savedict['netEQ'+str(k)] = qbots[k][0].state_dict()
-                savedict['netGQ'+str(k)] = qbots[k][2].state_dict()
-            
-            torch.save(savedict,'%s/epoch_%d.pth' % (save_path, epoch))
-
-            print("Epoch Done, Saved Model")
-            
-else:
-    for k in range(opt.num_abots):
-        abots[k][0].eval(),abots[k][1].eval(),abots[k][2].eval()
-    for k in range(opt.num_qbots):
-      qbots[k][0].eval(),qbots[k][1].eval(),qbots[k][2].eval()
-    evaluate()
-
-################
-img_input = torch.FloatTensor(opt.batch_size)
-img_input1 = torch.FloatTensor(opt.batch_size)
-cap_input = torch.LongTensor(opt.batch_size)
-ques = torch.LongTensor(ques_length, opt.batch_size)
-ques_input = torch.LongTensor(ques_length, opt.batch_size)
-his_input = torch.LongTensor(his_length, opt.batch_size)
-fact_input = torch.LongTensor(ques_length+ans_length,opt.batch_size)
-ans_input = torch.LongTensor(ans_length, opt.batch_size)
-ans_target = torch.LongTensor(ans_length, opt.batch_size)
-wrong_ans_input = torch.LongTensor(ans_length, opt.batch_size)
-UNK_ans_input = torch.LongTensor(1, opt.batch_size)
-UNK_ques_input = torch.LongTensor(1, opt.batch_size)
-ques_target = torch.LongTensor(ques_length,opt.batch_size)
-
-if opt.cuda:
-    ques, ques_input, his_input, img_input, img_input1, cap_input = ques.cuda(), ques_input.cuda(), his_input.cuda(), img_input.cuda(), img_input.cuda(), cap_input.cuda()
-    ans_input, ans_target = ans_input.cuda(), ans_target.cuda()
-    ques_target = ques_target.cuda()
-    UNK_ans_input = UNK_ans_input.cuda()
-    UNK_ques_input = UNK_ques_input.cuda()
-    fact_input = fact_input.cuda()
-
-ques = Variable(ques)
-ques_target = Variable(ques_target)
-fact_input = Variable(fact_input)
-ques_input = Variable(ques_input)
-img_input = Variable(img_input)
-img_input1 = Variable(img_input1)
-his_input = Variable(his_input)
-cap_input = Variable(cap_input)
-ans_input = Variable(ans_input)
-ans_target = Variable(ans_target)
-UNK_ques_input = Variable(UNK_ques_input)
-UNK_ans_input = Variable(UNK_ans_input)
-##################
 
 def train(epoch,k_curr):
     n_neg = opt.negative_sample
@@ -472,7 +284,7 @@ def train(epoch,k_curr):
             aloss_dict[str(i)] = aloss_array[i]
         writer.add_scalars('SL/scalar_qloss', qloss_dict, epoch*batch_size+iteration)
         writer.add_scalars('SL/scalar_aloss', aloss_dict, epoch*batch_size+iteration)
-        writer.export_scalars_to_json("./all_scalars.json")
+        writer.export_scalars_to_json(save_path+"/all_scalars.json")
         
         if k_curr!=10:
             T =  len(arr_reward)
@@ -567,30 +379,26 @@ def evaluate():
         for j in range(batch_size):
             save_tmp[j].append({'caption':cap_sample_txt[j], 'img_ids': img_ids[j], 'img_dir':img_dir[j]})
         
-        if k_curr==0:
-            rnd = -1
+        his = history[:,:1,:].clone().view(-1, his_length).t()
+        fact = facts[:,0,:].t()
+        his_input.data.resize_(his.size()).copy_(his)
+        fact_input.data.resize_(fact.size()).copy_(fact)
 
-        if k_curr!=10:
-            his = history[:,:rnd+2,:].clone().view(-1, his_length).t()
-            fact = facts[:,rnd+1,:].t()
-            his_input.data.resize_(his.size()).copy_(his)
-            fact_input.data.resize_(fact.size()).copy_(fact)
+        his_embQ = qbots[0][1](his_input, format = 'index')
+        fact_embQ = qbots[0][1](fact_input, format = 'index')
+        his_emb_g = abots[0][1](his_input, format = 'index')
 
-            his_embQ = qbots[0][1](his_input, format = 'index')
-            fact_embQ = qbots[0][1](fact_input, format = 'index')
-            his_emb_g = abots[0][1](his_input, format = 'index')
-
-            ques_hidden1 = repackage_hidden(ques_hidden1, batch_size)
-            hist_hidden1 = repackage_hidden(hist_hidden1, his_emb_g.size(1))
-            fact_hiddenQ = repackage_hidden(fact_hiddenQ, fact_input.size(1))
-            hist_hiddenQ = repackage_hidden(hist_hiddenQ, his_input.size(1))
-            encoder_featQ,img_embedQ,fact_hiddenQ = qbots[0][0](fact_embQ,his_embQ,\
-                                                          fact_hiddenQ, hist_hiddenQ, rnd+2)
-            embed_array.append(img_embedQ)
+        ques_hidden1 = repackage_hidden(ques_hidden1, batch_size)
+        hist_hidden1 = repackage_hidden(hist_hidden1, his_emb_g.size(1))
+        fact_hiddenQ = repackage_hidden(fact_hiddenQ, fact_input.size(1))
+        hist_hiddenQ = repackage_hidden(hist_hiddenQ, his_input.size(1))
+        encoder_featQ,img_embedQ,fact_hiddenQ = qbots[0][0](fact_embQ,his_embQ,\
+                                                      fact_hiddenQ, hist_hiddenQ, 1)
+        embed_array.append(img_embedQ)
 
         n_elts += 1
 
-        for rnd in range(k_curr,10):
+        for rnd in range(0,10):
             sample_opt = {'beam_size':1, 'seq_length':17, 'sample_max':0}
             _,fact_hiddenQ = qbots[0][2](encoder_featQ.view(1,-1,opt.ninp), fact_hiddenQ)
             UNK_ques_input.data.resize_((1, batch_size)).fill_(vocab_size) # 1x100
@@ -612,7 +420,7 @@ def evaluate():
             # featG is float 100x300, ques_hidden1 is tuple of 2 1x100x512 floats
             _,ques_hidden1 = abots[0][2](featG.view(1,-1,opt.ninp),ques_hidden1)
             UNK_ans_input.data.resize_((1, batch_size)).fill_(vocab_size)
-            sample_opt = {'beam_size':1, 'seq_length':15, 'sample_max':0}
+            sample_opt = {'beam_size':1, 'seq_length':9, 'sample_max':0}
             A, logprobsA = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt) # 100x9,100x9
             
             A_per, logprobsA_per = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt_per) # 100x9,100x9
@@ -651,26 +459,8 @@ def evaluate():
               save_tmp[j].append({'sample_ques':ques_sample_txt[j], \
                       'sample_ans':ans_sample_txt[j], 'rnd':rnd})
 
-        #Now compute all the metrics
-        #Per round metrics
-        mean_rank_final = mean_ranks/ float(n_elts)
-        mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
-        mean_q_perplex_final = torch.exp(q_perplex / float(n_elts))
-        mean_a_perplex_final = torch.exp(a_perplex / float(n_elts))
+        np.save(save_path+'/save_tmp',save_tmp)
 
-        #Averaged over rounds metrics
-        rnd_mean_rank_final = torch.mean(mean_rank_final)   #Average across rounds
-        rnd_mean_rec_rank_final = torch.mean(mean_rec_rank_final)   #Average across rounds
-        rnd_mean_q_perplex_final = torch.mean(mean_q_perplex_final)   #Average across rounds
-        rnd_mean_a_perplex_final = torch.mean(mean_a_perplex_final)   #Average across rounds
-
-        print("Mean Rank over all rounds is " + str(rnd_mean_rank_final))
-        print("Mean Reciprocal Rank over all rounds is " + str(rnd_mean_rec_rank_final))
-        print("Mean QBot perplexity over all rounds is " + str(rnd_mean_q_perplex_final))
-        print("Mean ABot perplexity over all rounds is " + str(rnd_mean_a_perplex_final))
-
-        np.save('./save_tmp',save_tmp)
-        sys.exit(0)
         iteration+=1
         reward_dict = {}
         for i, elt in enumerate(embed_array):
@@ -685,6 +475,210 @@ def evaluate():
         if iteration%20==0:
           print("Done with Batch # {} | Av. Time Per Batch: {:.3f}s".format(iteration,(time.time()-prev_time)/20))
           prev_time = time.time()
+          mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
+          print("MRR: ",mean_rec_rank_final)
 
-    print(save_tmp)
+    mean_rank_final = mean_ranks/ float(n_elts)
+    mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
+    np.save('mean_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank_final.cpu().numpy())
+    np.save('MRR'+str(opt.num_qbots)+str(opt.num_abots),mean_rec_rank_final.cpu().numpy())
+    np.save('image_retrieval_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank)
     return
+
+
+##############################
+# Main Code Execution Starts Here
+##############################
+
+opt = get_args()
+opt.manualSeed = random.randint(1, 10000)
+random.seed(opt.manualSeed)
+torch.manual_seed(opt.manualSeed)
+np.random.seed(opt.manualSeed)
+if opt.cuda:
+    torch.cuda.manual_seed_all(opt.manualSeed)
+
+if torch.cuda.is_available() and not opt.cuda:
+    print("WARNING: You have a CUDA device, so you should probably run with --cuda")
+
+t = datetime.datetime.now()
+cur_time = '%s-%s-%s' %(t.day, t.month, t.hour)
+save_path = os.path.join(opt.outf, cur_time)
+try:
+    os.makedirs(save_path)
+except OSError:
+    pass
+
+dataset,dataset_val,dataloader,dataloader_val = create_dataloader(opt)
+writer = SummaryWriter(save_path)
+
+vocab_size = dataset.vocab_size
+ques_length = dataset.ques_length
+ans_length = dataset.ans_length + 1
+his_length = dataset.ans_length  + dataset.ques_length
+cap_length = dataset.cap_length
+itow = dataset.itow
+
+qbots = []
+abots = []
+print('Initializing A-Bot and Q-Bot...')
+for j in range(opt.num_abots):
+    abots.append((_netE(opt.model, opt.ninp, opt.nhid, opt.nlayers, opt.dropout, opt.img_feat_size),
+                 model._netW(vocab_size, opt.ninp, opt.dropout),
+                _netG(opt.model, vocab_size, opt.ninp, opt.nhid, opt.nlayers, opt.dropout)))
+for j in  range(opt.num_qbots):
+    qbots.append((_netQE(opt.model, opt.ninp, opt.nhid, opt.nlayers, opt.dropout),
+                model._netW(vocab_size, opt.ninp, opt.dropout),
+                _netG(opt.model, vocab_size, opt.ninp, opt.nhid, opt.nlayers, opt.dropout)))
+critLM = model.LMCriterion()
+critImg = torch.nn.MSELoss()
+
+if opt.model_path != '':
+    print("=> loading checkpoint '{}'".format(opt.model_path))
+    checkpoint = torch.load(opt.model_path, map_location=lambda storage, loc: storage)
+
+    if opt.scratch:
+        pass
+    elif opt.curr:
+        print('Loading A and Q-Bots from SL')
+        for j in range(opt.num_abots):
+            load_my_state_dict(abots[j][1],checkpoint['netWA'])
+            load_my_state_dict(abots[j][0],checkpoint['netEA'])
+            load_my_state_dict(abots[j][2],checkpoint['netGA'])
+        for j in range(opt.num_qbots):
+            load_my_state_dict(qbots[j][1],checkpoint['netWQ'])
+            load_my_state_dict(qbots[j][0],checkpoint['netEQ'])
+            load_my_state_dict(qbots[j][2],checkpoint['netGQ'])
+    else:
+        print('Loading A and Q-Bots from RL')
+        for j in range(opt.num_abots):
+            load_my_state_dict(abots[j][1],checkpoint['netWA'+str(j)])
+            load_my_state_dict(abots[j][0],checkpoint['netEA'+str(j)])
+            load_my_state_dict(abots[j][2],checkpoint['netGA'+str(j)])
+        for j in range(opt.num_qbots):
+            load_my_state_dict(qbots[j][1],checkpoint['netWQ'+str(j)])
+            load_my_state_dict(qbots[j][0],checkpoint['netEQ'+str(j)])
+            load_my_state_dict(qbots[j][2],checkpoint['netGQ'+str(j)])
+
+else:
+    assert not opt.eval and opt.scratch, "Must specify model files if not starting evaluating or training from scratch"
+
+if opt.cuda: # ship to cuda, if has GPU
+    for k in range(opt.num_abots):
+        abots[k][0].cuda(),abots[k][1].cuda(),abots[k][2].cuda()
+    for k in range(opt.num_qbots):
+        qbots[k][0].cuda(),qbots[k][1].cuda(),qbots[k][2].cuda()
+    critLM.cuda(), critImg.cuda()
+
+################
+img_input = torch.FloatTensor(opt.batch_size)
+img_input1 = torch.FloatTensor(opt.batch_size)
+cap_input = torch.LongTensor(opt.batch_size)
+ques = torch.LongTensor(ques_length, opt.batch_size)
+ques_input = torch.LongTensor(ques_length, opt.batch_size)
+his_input = torch.LongTensor(his_length, opt.batch_size)
+fact_input = torch.LongTensor(ques_length+ans_length,opt.batch_size)
+ans_input = torch.LongTensor(ans_length, opt.batch_size)
+ans_target = torch.LongTensor(ans_length, opt.batch_size)
+wrong_ans_input = torch.LongTensor(ans_length, opt.batch_size)
+UNK_ans_input = torch.LongTensor(1, opt.batch_size)
+UNK_ques_input = torch.LongTensor(1, opt.batch_size)
+ques_target = torch.LongTensor(ques_length,opt.batch_size)
+
+if opt.cuda:
+    ques, ques_input, his_input, img_input, img_input1, cap_input = ques.cuda(), ques_input.cuda(), his_input.cuda(), img_input.cuda(), img_input.cuda(), cap_input.cuda()
+    ans_input, ans_target = ans_input.cuda(), ans_target.cuda()
+    ques_target = ques_target.cuda()
+    UNK_ans_input = UNK_ans_input.cuda()
+    UNK_ques_input = UNK_ques_input.cuda()
+    fact_input = fact_input.cuda()
+
+ques = Variable(ques)
+ques_target = Variable(ques_target)
+fact_input = Variable(fact_input)
+ques_input = Variable(ques_input)
+img_input = Variable(img_input)
+img_input1 = Variable(img_input1)
+his_input = Variable(his_input)
+cap_input = Variable(cap_input)
+ans_input = Variable(ans_input)
+ans_target = Variable(ans_target)
+UNK_ques_input = Variable(UNK_ques_input)
+UNK_ans_input = Variable(UNK_ans_input)
+##################
+
+if not opt.eval:
+    optimizerAbotSLarr = []
+    optimizerQbotSLarr = []
+    optimizerAbotRLarr = []
+    optimizerQbotRLarr = []
+    for j in range(opt.num_abots):
+        optimizerAbotSLarr.append(optim.Adam([{'params': abots[j][1].parameters()},
+                              {'params': abots[j][0].parameters()},
+                              {'params': abots[j][2].parameters()}], lr=opt.A_lr, betas=(opt.beta1, 0.999)))
+
+    for j in range(opt.num_qbots):
+        optimizerQbotSLarr.append(optim.Adam([{'params': qbots[j][1].parameters()},
+                              {'params': qbots[j][0].parameters()},
+                              {'params': qbots[j][2].parameters()}], lr=opt.Q_lr, betas=(opt.beta1, 0.999)))
+
+    for j in range(opt.num_abots):
+        optimizerAbotRLarr.append(optim.Adam([{'params': abots[j][1].parameters()},
+                              {'params': abots[j][0].parameters()},
+                              {'params': abots[j][2].parameters()}], lr=opt.A_lr, betas=(opt.beta1, 0.999)))
+
+    for j in range(opt.num_qbots):
+        optimizerQbotRLarr.append(optim.Adam([{'params': qbots[j][1].parameters()},
+                              {'params': qbots[j][0].parameters()},
+                              {'params': qbots[j][2].parameters()}], lr=opt.Q_lr, betas=(opt.beta1, 0.999)))
+
+    for k in range(opt.num_abots):
+        abots[k][0].train(),abots[k][1].train(),abots[k][2].train()
+    for k in range(opt.num_qbots):
+        qbots[k][0].train(),qbots[k][1].train(),qbots[k][2].train()
+
+    k_curr = 10 if opt.start_curr is None else opt.start_curr+1
+    for epoch in range(opt.start_epoch+1, opt.niter):
+        if opt.k_curr is not None:
+            assert not opt.scratch and not opt.curr and opt.start_curr is None, "Don't provide any curr flags if you want training with fixed K"
+            k_curr = opt.k_curr
+        elif opt.scratch:
+            assert opt.start_curr is None, "Don't give start_curr flag if you want to train from scratch"
+            if epoch>15:
+                k_curr -= 1
+        elif opt.curr or opt.start_curr is not None:
+            assert not opt.scratch and opt.k_curr is None, "Don't give scratch or k_curr flag if you want curriculum training"
+            k_curr -= 1
+        else:
+            print("No Training Method provided, assuming default is curriculum starting from k=10")
+            k_curr -= 1
+
+        k_curr = max(0,k_curr)
+        print("Starting Epoch: {} | K: {}".format(epoch,k_curr))
+        t = time.time()
+        im_loss_epoch_n = train(epoch,k_curr)
+        print("Finished Epoch: {} | K: {} | Time: {:.3f}".format(epoch,k_curr,time.time()-t))
+
+        if epoch%opt.save_iter == 0 and not opt.no_save:
+            savedict = {'epoch': epoch,
+                    'k': k,
+                    'opt': opt}
+            for k in range(len(abots)):
+                savedict['netWA'+str(k)] = abots[k][1].state_dict()
+                savedict['netEA'+str(k)] = abots[k][0].state_dict()
+                savedict['netGA'+str(k)] = abots[k][2].state_dict()
+            for k in range(len(qbots)):
+                savedict['netWQ'+str(k)] = qbots[k][1].state_dict()
+                savedict['netEQ'+str(k)] = qbots[k][0].state_dict()
+                savedict['netGQ'+str(k)] = qbots[k][2].state_dict()
+            
+            torch.save(savedict,'%s/epoch_%d.pth' % (save_path, epoch))
+
+            print("Epoch Done, Saved Model")
+
+else:
+    for k in range(opt.num_abots):
+        abots[k][0].eval(),abots[k][1].eval(),abots[k][2].eval()
+    for k in range(opt.num_qbots):
+      qbots[k][0].eval(),qbots[k][1].eval(),qbots[k][2].eval()
+    evaluate()

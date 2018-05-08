@@ -6,7 +6,7 @@ import h5py
 import json
 import pdb
 import random
-from misc.utils import repackage_hidden, clip_gradient, adjust_learning_rate, decode_txt
+from utils.tools import repackage_hidden, clip_gradient, adjust_learning_rate, decode_txt
 
 class train(data.Dataset): # torch wrapper
     def __init__(self, input_img_h5, input_ques_h5, input_json, negative_sample, num_val, data_split):

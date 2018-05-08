@@ -2,7 +2,7 @@ import argparse
 
 def get_args():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--data_dir', default='/home/akshat/visdial-pytorch/data/', help='path to directory with data')
+  parser.add_argument('--data_dir', default='/home/vd/visualdialog-pytorch/data/', help='path to directory with data')
   parser.add_argument('--input_img_h5', default='vdl_img_vgg.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_ques_h5', default='visdial_data.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_json', default='visdial_params.json', help='path to dataset, now hdf5 file')
@@ -38,7 +38,7 @@ def get_args():
   parser.add_argument('--j_eval', type=bool, default=False, help='Jiasen Evaluation')
   parser.add_argument('--scratch', action='store_true', default=False, help='Train from Scratch')
   parser.add_argument('--curr', action='store_true', default=False, help='Train Entire Curriculum starting from SL pretraining')
-  parser.add_argument('--start_curr', type=int, default=10, help='Value of K to start curriculum from')
+  parser.add_argument('--start_curr', type=int, default=None, help='Value of K to start curriculum from')
   parser.add_argument('--k_curr', type=int, default=None, help='Do exactly one value of K always')  
   parser.add_argument('--num_abots', type=int, default=1, help='how many abots')
   parser.add_argument('--num_qbots', type=int, default=1, help='how many qbots')

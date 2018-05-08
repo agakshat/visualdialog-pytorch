@@ -1,5 +1,5 @@
 import torch.utils.data
-import dataloader as dl
+import utils.dataloader as dl
 
 def create_dataloader(opt):
   opt.input_img_h5 = opt.data_dir +  opt.input_img_h5
