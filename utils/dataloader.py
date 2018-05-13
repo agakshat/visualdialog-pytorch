@@ -29,8 +29,8 @@ class train(data.Dataset): # torch wrapper
         f = h5py.File(input_img_h5, 'r')
 
 
-        f2 = h5py.File('data/other_data/data_img.h5')['images_train']
-        f2ids = json.load(open('data/other_data/visdial_params.json'))['unique_img_train']
+        f2 = h5py.File('data/other_data/data_img.h5')['images_'+split]
+        f2ids = json.load(open('data/other_data/visdial_params.json'))['unique_img_'+split]
         f2idsa = np.argsort(np.array(f2ids))
         f1ids = []
         f1dirs = []

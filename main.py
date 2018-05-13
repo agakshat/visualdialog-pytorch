@@ -343,25 +343,25 @@ def evaluate():
     hist_hidden1 = abots[0][0].init_hidden(opt.batch_size)
     hist_hiddenQ = qbots[0][0].init_hidden(opt.batch_size)
     fact_hiddenQ = qbots[0][0].init_hidden(opt.batch_size) 
-    data_iter = iter(dataloader)
+    data_iter = iter(dataloader_val)
     imgs = dataset.imgs
 
     iteration = 0
     global img_input
     prev_time = time.time()
-    mean_rank = np.zeros((len(dataloader)*opt.batch_size,11))
+    # mean_rank = np.zeros((len(dataloader_val)*opt.batch_size,11))
 
     imgs_tensor = Variable(torch.FloatTensor(imgs))
     imgs_tensor = imgs_tensor.cuda()
 
     #Used to track metrics
-    mean_ranks = torch.zeros(10)
-    mean_rec_ranks = torch.zeros(10)
-    q_perplex = torch.zeros(10)
-    a_perplex = torch.zeros(10)
+    # mean_ranks = torch.zeros(10)
+    # mean_rec_ranks = torch.zeros(10)
+    # q_perplex = torch.zeros(10)
+    # a_perplex = torch.zeros(10)
     n_elts = 0
 
-    while iteration < len(dataloader):
+    while iteration < len(dataloader_val):
         embed_array = []
         data = data_iter.next()
         img_ids, img_dir, image_j, image, history, question, answer, answerT, answerLen, answerIdx, questionL, \
@@ -404,9 +404,9 @@ def evaluate():
             UNK_ques_input.data.resize_((1, batch_size)).fill_(vocab_size) # 1x100
             Q,logprobQ = qbots[0][2].sample_differentiable(qbots[0][1],UNK_ques_input,fact_hiddenQ, sample_opt) # Q is 100x16, same logprobQ
 
-            sample_opt_per = {'beam_size':1, 'seq_length':17, 'sample_max':1}
-            Q_per,logprobQ_per = qbots[0][2].sample_differentiable(qbots[0][1],UNK_ques_input,fact_hiddenQ, sample_opt_per) # Q is 100x16, same logprobQ
-            q_perplex[rnd] += compute_perplexity_batch(logprobQ_per, is_log=True).data[0]
+            # sample_opt_per = {'beam_size':1, 'seq_length':17, 'sample_max':1}
+            # Q_per,logprobQ_per = qbots[0][2].sample_differentiable(qbots[0][1],UNK_ques_input,fact_hiddenQ, sample_opt_per) # Q is 100x16, same logprobQ
+            # q_perplex[rnd] += compute_perplexity_batch(logprobQ_per, is_log=True).data[0]
 
             Q = Q.data.t()
             Q = Q[:-1]
@@ -423,12 +423,12 @@ def evaluate():
             sample_opt = {'beam_size':1, 'seq_length':9, 'sample_max':0}
             A, logprobsA = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt) # 100x9,100x9
             
-            A_per, logprobsA_per = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt_per) # 100x9,100x9
-            a_perplex[rnd] += compute_perplexity_batch(logprobsA_per, is_log=True).data[0]
+            # A_per, logprobsA_per = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt_per) # 100x9,100x9
+            # a_perplex[rnd] += compute_perplexity_batch(logprobsA_per, is_log=True).data[0]
 
-            mrank, m_rec = abots[0][2].sample_opt_eval(abots[0][1], UNK_ans_input, ques_hidden1, answerT, opt_answerT, rnd, sample_opt) # 100x9,100x9
-            mean_ranks[rnd] += mrank
-            mean_rec_ranks[rnd] += m_rec
+            # mrank, m_rec = abots[0][2].sample_opt_eval(abots[0][1], UNK_ans_input, ques_hidden1, answerT, opt_answerT, rnd, sample_opt) # 100x9,100x9
+            # mean_ranks[rnd] += mrank
+            # mean_rec_ranks[rnd] += m_rec
 
             A = A.data.t()
             A = A[:-1]
@@ -470,18 +470,18 @@ def evaluate():
               img_diff = torch.sum((img-img_input[img_no])**2)
               found_rank = torch.sum((l2_dist <= img_diff).float())
               mean_rank[(iteration-1)*opt.batch_size+img_no,i] += found_rank
-        print("Rank Mean {}".format(mean_rank[:(iteration-1)*opt.batch_size+img_no].mean(axis=0)))
 
         if iteration%20==0:
           print("Done with Batch # {} | Av. Time Per Batch: {:.3f}s".format(iteration,(time.time()-prev_time)/20))
           prev_time = time.time()
-          mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
-          print("MRR: ",mean_rec_rank_final)
+          # mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
+          # print("MRR: ",mean_rec_rank_final)
+          # print("Image Retrieval Rank {}".format(mean_rank[:(iteration-1)*opt.batch_size+img_no].mean(axis=0)))
 
-    mean_rank_final = mean_ranks/ float(n_elts)
-    mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
-    np.save('mean_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank_final.cpu().numpy())
-    np.save('MRR'+str(opt.num_qbots)+str(opt.num_abots),mean_rec_rank_final.cpu().numpy())
+    # mean_rank_final = mean_ranks/ float(n_elts)
+    # mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
+    # np.save('mean_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank_final.cpu().numpy())
+    # np.save('MRR'+str(opt.num_qbots)+str(opt.num_abots),mean_rec_rank_final.cpu().numpy())
     np.save('image_retrieval_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank)
     return
 

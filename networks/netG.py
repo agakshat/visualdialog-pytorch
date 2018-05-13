@@ -304,9 +304,11 @@ class _netG(nn.Module):
         #Now find rank of the ground truth answer from among all candidates
         ranks = 1.0 + (torch.sum(((opt_logprob - ans_logprob.expand_as(opt_logprob)) > 0), 1)).float() 
         mean_ranks = torch.mean(ranks)
+        r1 = torch.sum(ranks==1)
+        r5 = torch.sum(ranks<=5)
+        r10 = torch.sum(ranks<=10)
 
         rec_ranks = torch.pow(ranks, -1)
         mean_rec_ranks = torch.mean(rec_ranks)
 
-
-        return mean_ranks, mean_rec_ranks
+        return mean_ranks, mean_rec_ranks, r1, r5, r10

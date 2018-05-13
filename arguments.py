@@ -6,7 +6,7 @@ def get_args():
   parser.add_argument('--input_img_h5', default='vdl_img_vgg.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_ques_h5', default='visdial_data.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_json', default='visdial_params.json', help='path to dataset, now hdf5 file')
-  parser.add_argument('--outf', default='./save/train_allQ/', help='folder to output images and model checkpoints')
+  parser.add_argument('--outf', default='./save/v2_temp/', help='folder to output images and model checkpoints')
   parser.add_argument('--num_val', type=int, default=0, help='number of image split out as validation set.')
   parser.add_argument('--model_path', default='', help='path of saved network file for evaluation or continuing training')
   parser.add_argument('--negative_sample', type=int, default=20, help='folder to output images and model checkpoints')
@@ -21,7 +21,7 @@ def get_args():
   parser.add_argument('--Q_lr', type=float, default=1e-3, help='learning rate for QBot, default=1e-3')
   parser.add_argument('--A_lr', type=float, default=1e-3, help='learning rate for ABot, default=1e-3')
   parser.add_argument('--beta1', type=float, default=0.9, help='beta1 for adam. default=0.9')
-  parser.add_argument('--cuda'  , action='store_true', help='enables cuda')
+  parser.add_argument('--no-cuda',action='store_true', default=False, help='enables cuda')
   parser.add_argument('--ngpu'  , type=int, default=1, help='number of GPUs to use')
   parser.add_argument('--verbose'  , action='store_true', help='show the sampled caption')
   parser.add_argument('--hidden_size', type=int, default=512, help='input batch size')
@@ -35,7 +35,6 @@ def get_args():
   parser.add_argument('--image_loss_weight', type=float, default=1.0, help='folder to output images and model checkpoints')
   parser.add_argument('--gamma', type=float, default=0.99, help='discount')
   parser.add_argument('--eval', type=bool, default=False, help='Evaluation')
-  parser.add_argument('--j_eval', type=bool, default=False, help='Jiasen Evaluation')
   parser.add_argument('--scratch', action='store_true', default=False, help='Train from Scratch')
   parser.add_argument('--curr', action='store_true', default=False, help='Train Entire Curriculum starting from SL pretraining')
   parser.add_argument('--start_curr', type=int, default=None, help='Value of K to start curriculum from')
@@ -45,5 +44,5 @@ def get_args():
   parser.add_argument('--img_feat_size', type=int, default=4096, help='size of image embedding')
   parser.add_argument('--no-save', action='store_true', default=False, help='specify if dont want to save model files')
   opt = parser.parse_args()
-
+  opt.cuda = not opt.no_cuda
   return opt
