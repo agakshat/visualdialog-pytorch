@@ -1,5 +1,7 @@
 # visualdialog-pytorch
-Supervised and Reinforcement Learning for Visual Dialog in Pytorch
+Supervised and Multi-Agent Reinforcement Learning for Visual Dialog in Pytorch
+
+This code is for our paper, <a href="https://arxiv.org/abs/1808.04359">Mind Your Language: Learning Visually Grounded Dialog in a Multi-Agent Setting</a>.
 
 Work done with [Swami](https://github.com/swami1995) and [Vasu](https://vasusharma.github.io)
 

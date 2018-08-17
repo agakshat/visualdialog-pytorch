@@ -1,3 +1,7 @@
+metrics/
+old_metrics/
+plots/
+save/
 human-eval/
 evaluate_mrr.py
 *.json
