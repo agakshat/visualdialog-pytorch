@@ -1,3 +1,4 @@
+human-eval/
 evaluate_mrr.py
 *.json
 # Byte-compiled / optimized / DLL files
