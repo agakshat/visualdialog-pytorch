@@ -24,7 +24,6 @@ from networks.encoder_QIH import _netE
 from networks.netG import _netG
 from networks.encoder_QBot import _netE as _netQE
 from arguments import get_args
-from collections import OrderedDict
 
 def train(epoch,k_curr):
     n_neg = opt.negative_sample
@@ -377,7 +376,6 @@ def evaluate():
         arr_reward = []
         save_tmp = [[] for j in range(batch_size)]        
         cap_sample_txt = decode_txt(itow, cap)
-        #pdb.set_trace() 
         for j in range(batch_size):
             save_tmp[j].append({'caption':cap_sample_txt[j], 'img_ids': img_ids[j], 'img_dir':img_dir[j]})
         
@@ -456,11 +454,9 @@ def evaluate():
 
             ans_sample_txt = decode_txt(itow, A)
             ques_sample_txt = decode_txt(itow, Q)
-            #pdb.set_trace()
             for j in range(batch_size):
               save_tmp[j].append({'sample_ques':ques_sample_txt[j], \
                        'sample_ans':ans_sample_txt[j], 'rnd':rnd})
-              #save_tmp.append(ques_sample_txt[j])
 
         np.save(save_path+'/predictions'+str(opt.num_qbots)+'Q'+str(opt.num_abots)+'A.npy',save_tmp)
         sys.exit(0)
