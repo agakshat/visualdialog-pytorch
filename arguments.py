@@ -2,7 +2,7 @@ import argparse
 
 def get_args():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--data_dir', default='/home/vd/visualdialog-pytorch/data/', help='path to directory with data')
+  parser.add_argument('--data_dir', default='/serverdata/akshat/data/', help='path to directory with data')
   parser.add_argument('--input_img_h5', default='vdl_img_vgg.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_ques_h5', default='visdial_data.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_json', default='visdial_params.json', help='path to dataset, now hdf5 file')

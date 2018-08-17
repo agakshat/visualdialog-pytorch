@@ -24,6 +24,7 @@ from networks.encoder_QIH import _netE
 from networks.netG import _netG
 from networks.encoder_QBot import _netE as _netQE
 from arguments import get_args
+from collections import OrderedDict
 
 def train(epoch,k_curr):
     n_neg = opt.negative_sample
@@ -360,6 +361,7 @@ def evaluate():
     # q_perplex = torch.zeros(10)
     # a_perplex = torch.zeros(10)
     n_elts = 0
+    save_tmp = []
 
     while iteration < len(dataloader_val):
         embed_array = []
@@ -373,9 +375,9 @@ def evaluate():
         cap_input.data.resize_(cap.size()).copy_(cap) # 24x100
 
         arr_reward = []
-        save_tmp = [[] for j in range(batch_size)]
+        save_tmp = [[] for j in range(batch_size)]        
         cap_sample_txt = decode_txt(itow, cap)
-        
+        #pdb.set_trace() 
         for j in range(batch_size):
             save_tmp[j].append({'caption':cap_sample_txt[j], 'img_ids': img_ids[j], 'img_dir':img_dir[j]})
         
@@ -454,22 +456,24 @@ def evaluate():
 
             ans_sample_txt = decode_txt(itow, A)
             ques_sample_txt = decode_txt(itow, Q)
-
+            #pdb.set_trace()
             for j in range(batch_size):
               save_tmp[j].append({'sample_ques':ques_sample_txt[j], \
-                      'sample_ans':ans_sample_txt[j], 'rnd':rnd})
+                       'sample_ans':ans_sample_txt[j], 'rnd':rnd})
+              #save_tmp.append(ques_sample_txt[j])
 
-        np.save(save_path+'/save_tmp',save_tmp)
+        np.save(save_path+'/predictions'+str(opt.num_qbots)+'Q'+str(opt.num_abots)+'A.npy',save_tmp)
+        sys.exit(0)
 
         iteration+=1
-        reward_dict = {}
-        for i, elt in enumerate(embed_array):
-          for img_no in range(elt.size(0)):
-              img = elt[img_no]
-              l2_dist = torch.sum(((imgs_tensor - img) ** 2), 1)
-              img_diff = torch.sum((img-img_input[img_no])**2)
-              found_rank = torch.sum((l2_dist <= img_diff).float())
-              mean_rank[(iteration-1)*opt.batch_size+img_no,i] += found_rank
+        # reward_dict = {}
+        # for i, elt in enumerate(embed_array):
+        #   for img_no in range(elt.size(0)):
+        #       img = elt[img_no]
+        #       l2_dist = torch.sum(((imgs_tensor - img) ** 2), 1)
+        #       img_diff = torch.sum((img-img_input[img_no])**2)
+        #       found_rank = torch.sum((l2_dist <= img_diff).float())
+        #       mean_rank[(iteration-1)*opt.batch_size+img_no,i] += found_rank
 
         if iteration%20==0:
           print("Done with Batch # {} | Av. Time Per Batch: {:.3f}s".format(iteration,(time.time()-prev_time)/20))
@@ -648,12 +652,12 @@ if not opt.eval:
                 k_curr -= 1
         elif opt.curr or opt.start_curr is not None:
             assert not opt.scratch and opt.k_curr is None, "Don't give scratch or k_curr flag if you want curriculum training"
-            k_curr -= 1
+            k_curr -= 1/3
         else:
             print("No Training Method provided, assuming default is curriculum starting from k=10")
             k_curr -= 1
 
-        k_curr = max(0,k_curr)
+        k_curr = int(max(0,k_curr))
         print("Starting Epoch: {} | K: {}".format(epoch,k_curr))
         t = time.time()
         im_loss_epoch_n = train(epoch,k_curr)
