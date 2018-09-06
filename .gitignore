@@ -1,9 +1,4 @@
-metrics/
-old_metrics/
-plots/
-save/
-human-eval/
-evaluate_mrr.py
+misc/
 *.json
 # Byte-compiled / optimized / DLL files
 __pycache__/
