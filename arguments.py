@@ -2,11 +2,12 @@ import argparse
 
 def get_args():
   parser = argparse.ArgumentParser()
-  parser.add_argument('--data_dir', default='/serverdata/akshat/data/', help='path to directory with data')
+  parser.add_argument('--data_dir', default='data/', help='path to directory with data')
   parser.add_argument('--input_img_h5', default='vdl_img_vgg.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_ques_h5', default='visdial_data.h5', help='path to dataset, now hdf5 file')
   parser.add_argument('--input_json', default='visdial_params.json', help='path to dataset, now hdf5 file')
-  parser.add_argument('--outf', default='./save/v2_temp/', help='folder to output images and model checkpoints')
+  parser.add_argument('--v09_data_dir', default='data/v09/', help='path to directory with v09 data')
+  parser.add_argument('--outf', default='./save/temp/', help='folder to output images and model checkpoints')
   parser.add_argument('--num_val', type=int, default=0, help='number of image split out as validation set.')
   parser.add_argument('--model_path', default='', help='path of saved network file for evaluation or continuing training')
   parser.add_argument('--negative_sample', type=int, default=20, help='folder to output images and model checkpoints')

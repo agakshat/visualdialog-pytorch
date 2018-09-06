@@ -96,7 +96,7 @@ def evaluate():
 
             sample_opt_per = {'beam_size':1, 'seq_length':17, 'sample_max':1}
             Q_per,logprobQ_per = qbots[0][2].sample_differentiable(qbots[0][1],UNK_ques_input,fact_hiddenQ, sample_opt_per) # Q is 100x16, same logprobQ
-            q_perplex[rnd] += compute_perplexity_batch(logprobQ_per, is_log=True).data[0]
+            q_perplex[rnd] += compute_perplexity_batch(logprobQ_per.cpu(), is_log=True).item()
 
             Q = Q.data.t()
             Q = Q[:-1]
@@ -115,14 +115,14 @@ def evaluate():
             
             sample_opt_per = {'beam_size':1, 'seq_length':9, 'sample_max':1}
             A_per, logprobsA_per = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt_per) # 100x9,100x9
-            a_perplex[rnd] += compute_perplexity_batch(logprobsA_per, is_log=True).data[0]
+            a_perplex[rnd] += compute_perplexity_batch(logprobsA_per.cpu(), is_log=True).item()
 
             mrank, m_rec, batch_r1, batch_r5, batch_r10 = abots[0][2].sample_opt_eval(abots[0][1], UNK_ans_input, ques_hidden1, answerT, opt_answerT, rnd, sample_opt) # 100x9,100x9
             mean_ranks[rnd] += mrank
             mean_rec_ranks[rnd] += m_rec
-            r1[rnd] += batch_r1
-            r5[rnd] += batch_r5
-            r10[rnd] += batch_r10
+            r1[rnd] += batch_r1.float()
+            r5[rnd] += batch_r5.float()
+            r10[rnd] += batch_r10.float()
 
             A = A.data.t()
             A = A[:-1]
@@ -150,7 +150,7 @@ def evaluate():
             ques_sample_txt = decode_txt(itow, Q)
 
         iteration+=1
-        if iteration%20==0:
+        if iteration%2==0:
           print("Done with Batch # {} | Av. Time Per Batch: {:.3f}s".format(iteration,(time.time()-prev_time)/20))
           prev_time = time.time()
           mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
@@ -280,11 +280,8 @@ if opt.cuda:
 
 ##################
 
-if not opt.eval:
-    assert False, "must specify eval flag for MRR calculations"
-else:
-    for k in range(opt.num_abots):
-        abots[k][0].eval(),abots[k][1].eval(),abots[k][2].eval()
-    for k in range(opt.num_qbots):
-      qbots[k][0].eval(),qbots[k][1].eval(),qbots[k][2].eval()
-    evaluate()
+for k in range(opt.num_abots):
+    abots[k][0].eval(),abots[k][1].eval(),abots[k][2].eval()
+for k in range(opt.num_qbots):
+  qbots[k][0].eval(),qbots[k][1].eval(),qbots[k][2].eval()
+evaluate()
