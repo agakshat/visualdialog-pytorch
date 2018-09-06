@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import pdb
 import math
 import numpy as np
@@ -28,11 +27,6 @@ class _netE(nn.Module):
         self.Wh_1 = nn.Linear(self.nhid, self.nhid)
         self.Wa_1 = nn.Linear(self.nhid, 1)
 
-        #self.Wq_2 = nn.Linear(self.nhid, self.nhid)
-        #self.Wh_2 = nn.Linear(self.nhid, self.nhid)
-        #self.Wi_2 = nn.Linear(self.nhid, self.nhid)
-        #self.Wa_2 = nn.Linear(self.nhid, 1)
-
         self.fc1 = nn.Linear(self.nhid*3, self.ninp)
 
     def forward(self, ques_emb, his_emb, img_raw, ques_hidden, his_hidden, rnd):
@@ -46,7 +40,7 @@ class _netE(nn.Module):
 
         ques_emb_1 = self.Wq_1(ques_feat).view(-1, 1, self.nhid)
         his_emb_1 = self.Wh_1(his_feat).view(-1, rnd, self.nhid)
-        #pdb.set_trace()
+
         atten_emb_1 = F.tanh(his_emb_1 + ques_emb_1.expand_as(his_emb_1))
 
         his_atten_weight = F.softmax(self.Wa_1(F.dropout(atten_emb_1, self.d, training=self.training
@@ -56,17 +50,7 @@ class _netE(nn.Module):
                                         his_feat.view(-1, rnd, self.nhid))
         spat_size = 1
         his_attn_feat = his_attn_feat.view(-1, self.nhid)
-        #ques_emb_2 = self.Wq_2(ques_feat).view(-1, 1, self.nhid)
-        #his_emb_2 = self.Wh_2(his_attn_feat).view(-1, 1, self.nhid)
-        #img_emb_2 = self.Wi_2(img_emb).view(-1, spat_size, self.nhid)
-        #pdb.set_trace()
-        #atten_emb_2 = F.tanh(img_emb_2 + ques_emb_2.expand_as(img_emb_2) + \
-        #                            his_emb_2.expand_as(img_emb_2))
-        #img_atten_weight = F.softmax(self.Wa_2(F.dropout(atten_emb_2, self.d, training=self.training
-        #                                        ).view(-1, self.nhid)).view(-1, 1),dim=1)
 
-        #img_attn_feat = torch.bmm(img_atten_weight.view(-1, 1, spat_size),
-        #                                img_emb.view(-1, spat_size, self.nhid))
         img_attn_feat = img_emb
         concat_feat = torch.cat((ques_feat, his_attn_feat.view(-1, self.nhid), \
                                  img_attn_feat.view(-1, self.nhid)),1)
@@ -78,10 +62,10 @@ class _netE(nn.Module):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).data
         if self.rnn_type == 'LSTM':
-            return (Variable(weight.new(self.nlayers, bsz, self.nhid).zero_()),
-                    Variable(weight.new(self.nlayers, bsz, self.nhid).zero_()))
+            return (weight.new(self.nlayers, bsz, self.nhid).zero_(),
+                    weight.new(self.nlayers, bsz, self.nhid).zero_())
         else:
-            return Variable(weight.new(self.nlayers, bsz, self.nhid).zero_())
+            return weight.new(self.nlayers, bsz, self.nhid).zero_()
 
 
 class _netEJ(nn.Module):
@@ -124,7 +108,7 @@ class _netEJ(nn.Module):
 
         ques_emb_1 = self.Wq_1(ques_feat).view(-1, 1, self.nhid)
         his_emb_1 = self.Wh_1(his_feat).view(-1, rnd, self.nhid)
-        #pdb.set_trace()
+
         atten_emb_1 = F.tanh(his_emb_1 + ques_emb_1.expand_as(his_emb_1))
 
         his_atten_weight = F.softmax(self.Wa_1(F.dropout(atten_emb_1, self.d, training=self.training
@@ -137,13 +121,13 @@ class _netEJ(nn.Module):
         ques_emb_2 = self.Wq_2(ques_feat).view(-1, 1, self.nhid)
         his_emb_2 = self.Wh_2(his_attn_feat).view(-1, 1, self.nhid)
         img_emb_2 = self.Wi_2(img_emb).view(-1, spat_size, self.nhid)
-        #pdb.set_trace()
+
         atten_emb_2 = F.tanh(img_emb_2 + ques_emb_2.expand_as(img_emb_2) + his_emb_2.expand_as(img_emb_2))
         img_atten_weight = F.softmax(self.Wa_2(F.dropout(atten_emb_2, self.d, training=self.training
                                                 ).view(-1, self.nhid)).view(-1, spat_size),dim=1)
 
         img_attn_feat = torch.bmm(img_atten_weight.view(-1, 1, spat_size),img_emb.view(-1, spat_size, self.nhid))
-        #img_attn_feat = img_emb
+
         concat_feat = torch.cat((ques_feat, his_attn_feat.view(-1, self.nhid),img_attn_feat.view(-1, self.nhid)),1)
 
         encoder_feat = F.tanh(self.fc1(F.dropout(concat_feat, self.d, training=self.training)))
@@ -153,7 +137,7 @@ class _netEJ(nn.Module):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).data
         if self.rnn_type == 'LSTM':
-            return (Variable(weight.new(self.nlayers, bsz, self.nhid).zero_()),
-                    Variable(weight.new(self.nlayers, bsz, self.nhid).zero_()))
+            return (weight.new(self.nlayers, bsz, self.nhid).zero_(),
+                    weight.new(self.nlayers, bsz, self.nhid).zero_())
         else:
-            return Variable(weight.new(self.nlayers, bsz, self.nhid).zero_())
+            return weight.new(self.nlayers, bsz, self.nhid).zero_()

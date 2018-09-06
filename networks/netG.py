@@ -1,6 +1,5 @@
 import torch
 import torch.nn as nn
-from torch.autograd import Variable
 import pdb
 import math
 import numpy as np
@@ -36,10 +35,10 @@ class _netG(nn.Module):
     def init_hidden(self, bsz):
         weight = next(self.parameters()).data
         if self.rnn_type == 'LSTM':
-            return (Variable(weight.new(self.nlayers, bsz, self.nhid).zero_()),
-                    Variable(weight.new(self.nlayers, bsz, self.nhid).zero_()))
+            return (weight.new(self.nlayers, bsz, self.nhid).zero_(),
+                    weight.new(self.nlayers, bsz, self.nhid).zero_())
         else:
-            return Variable(weight.new(self.nlayers, bsz, self.nhid).zero_())
+            return weight.new(self.nlayers, bsz, self.nhid).zero_()
 
 
     def sample_beam(self, netW, input, hidden_state, opt={}):
@@ -67,7 +66,7 @@ class _netG(nn.Module):
             for t in range(self.seq_length + 1):
                 if t == 0: # input <bos>
                     it = input.data.resize_(1, beam_size).fill_(self.vocab_size)
-                    xt = netW(Variable(it, requires_grad=False))
+                    xt = netW(it.detach())
                 else:
                     """perform a beam merge. that is,
                     for every previous beam we now many new possibilities to branch out
@@ -125,7 +124,7 @@ class _netG(nn.Module):
 
                     # encode as vectors
                     it = beam_seq[t-1].view(1,-1)
-                    xt = netW(Variable(it.cuda()))
+                    xt = netW(it.cuda())
 
                 if t >= 1:
                     state = new_state
@@ -172,10 +171,10 @@ class _netG(nn.Module):
                     # scale logprobs by temperature
                     prob_prev = torch.exp(torch.div(logprobs.data, temperature)).cpu()
                 it = torch.multinomial(prob_prev, 1).cuda()
-                sampleLogprobs = logprobs.gather(1, Variable(it, requires_grad=False)) # gather the logprobs at sampled positions
+                sampleLogprobs = logprobs.gather(1, it.detach()) # gather the logprobs at sampled positions
                 it = it.view(-1).long() # and flatten indices for downstream processing
 
-            xt = netW(Variable(it.view(1,-1), requires_grad=False))
+            xt = netW(it.view(1,-1).detach())
 
             if t >= 1:
                 seq.append(it) #seq[t] the input of t+2 time step
@@ -289,14 +288,14 @@ class _netG(nn.Module):
             if t >= opt_answerT.size(3):
                 continue
             opt_inds = opt_answerT[:, rnd, :, t]
-            added_opt_prob = torch.gather(logprobs, 1, Variable(opt_inds.long().cuda()))  #Returns logprobs for the 100 negative samples for every batch element for a specific word in the sequence
+            added_opt_prob = torch.gather(logprobs, 1, opt_inds.long().cuda())  #Returns logprobs for the 100 negative samples for every batch element for a specific word in the sequence
             opt_prob_mask = (opt_inds != 0).float() #Create a mask to mask out 0 padding values log prob
 
             opt_logprob += (opt_prob_mask * added_opt_prob.data.cpu())
             #opt_logprobs has size batch_size X #negative candidates
 
             ans_inds = answerT[:, rnd, t].unsqueeze(1)
-            added_ans_prob = torch.gather(logprobs, 1, Variable(ans_inds.long().cuda())) #This has size batch_size X 1 
+            added_ans_prob = torch.gather(logprobs, 1, ans_inds.long().cuda()) #This has size batch_size X 1 
             ans_prob_mask = (ans_inds != 0).float()
             ans_logprob += (ans_prob_mask * added_ans_prob.data.cpu())
 

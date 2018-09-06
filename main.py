@@ -14,7 +14,6 @@ import copy
 
 import torch
 import torch.optim as optim
-from torch.autograd import Variable
 
 from utils.tools import repackage_hidden, decode_txt, sample_batch_neg, create_joint_seq, \
                     create_joint_seq_gt, reverse_padding, load_my_state_dict, compute_perplexity_batch
@@ -122,8 +121,9 @@ def train(epoch,k_curr):
             # MLE loss for generator
             ans_emb = abots[abot_idx][1](ans_input)
             logprob, _ = abots[abot_idx][2](ans_emb, ques_hidden1)
+
             lm_loss = critLM(logprob, ans_target.view(-1, 1))
-            lm_loss = lm_loss / torch.sum(ans_target.data.gt(0)) #  loss value for 1 roudn
+            lm_loss = lm_loss / torch.sum(ans_target.data.gt(0)).float() #  loss value for 1 round
 
             abots[abot_idx][1].zero_grad()
             abots[abot_idx][2].zero_grad()
@@ -134,11 +134,11 @@ def train(epoch,k_curr):
 
             logprobQ, ques_hiddenQ = qbots[qbot_idx][2](ques_embQ, fact_hiddenQ)
             lossQ = critLM(logprobQ, ques_target.view(-1, 1))  
-            lossQ /= torch.sum(ques_target.data.gt(0))
-            imgloss = 10.*critImg(img_embedQ,img_input)
-            imgloss_array.append(imgloss.data[0])
-            qloss_array.append(lm_loss.data[0])
-            aloss_array.append(lossQ.data[0])
+            lossQ /= torch.sum(ques_target.data.gt(0)).float()
+            imgloss = 10.*critImg(img_embedQ,img_input.detach())
+            imgloss_array.append(imgloss.item())
+            qloss_array.append(lm_loss.item())
+            aloss_array.append(lossQ.item())
             lossQ = lossQ + opt.image_loss_weight*imgloss # will store value of loss for 1 round
             qbots[qbot_idx][1].zero_grad()
             qbots[qbot_idx][0].zero_grad()
@@ -167,8 +167,8 @@ def train(epoch,k_curr):
             hist_hiddenQ = repackage_hidden(hist_hiddenQ, his_input.size(1))
             encoder_featQ,img_embedQ,fact_hiddenQ = qbots[qbot_idx][0](fact_embQ,his_embQ,\
                                                             fact_hiddenQ, hist_hiddenQ, rnd+2)
-            imgloss = 10.*critImg(img_embedQ,img_input)
-            imgloss_array.append(imgloss.data[0])
+            imgloss = 10.*critImg(img_embedQ,img_input.detach())
+            imgloss_array.append(imgloss.item())
             qbots[qbot_idx][1].zero_grad()
             qbots[qbot_idx][0].zero_grad()
             qbots[qbot_idx][2].zero_grad()
@@ -190,10 +190,6 @@ def train(epoch,k_curr):
             #for i in range(ques_length):
             #    Q[i] = generatedQ.multinomial()
             #Q = torch.exp(generatedQ).multinomial(ques_length,replacement=True).t()
-            # Maybe ensure that after one UNK token, all tokens are UNK, or just let A-Bot
-            # parse it that way?
-
-            # Not repackaging any variables to let backprop through time and dialog rounds
 
             # Note: Do [[itow[str(Q.data[i][j])] for j in range(ques_length)] for i in range(batch_size)]
             # to see the generated questions
@@ -202,7 +198,7 @@ def train(epoch,k_curr):
             Q_idx_search = (Q==vocab_size)
             _, Q_idx_search = torch.max(Q_idx_search,dim=0)
             Q_rev = reverse_padding(Q.t(), Q_idx_search.squeeze()).t()
-            ques_emb_g = abots[abot_idx][1](Variable(Q_rev), format = 'index') # 16x100x300
+            ques_emb_g = abots[abot_idx][1](Q_rev, format = 'index') # 16x100x300
             
             featG,ques_hidden1 = abots[abot_idx][0](ques_emb_g,his_emb_g,img_input,\
                                         ques_hidden1, hist_hidden1, rnd+1)
@@ -220,7 +216,7 @@ def train(epoch,k_curr):
             A_idx_search = (A==vocab_size)
             _, A_idx_search = torch.max(A_idx_search,dim=0)
             
-            QA = Variable(create_joint_seq(Q.t(), A.t(), Q_idx_search.squeeze() , A_idx_search.squeeze()).t())
+            QA = create_joint_seq(Q.t(), A.t(), Q_idx_search.squeeze() , A_idx_search.squeeze()).t()
             fact_embA = abots[abot_idx][1](QA,format='index') # float 25x100x300
             fact_embQ = qbots[qbot_idx][1](QA,format='index') # float 25x100x300
             # do this concatenation properly by having all non-UNK tokens first followed by UNKs
@@ -253,7 +249,7 @@ def train(epoch,k_curr):
             diff_embed = (img_input-img_embedQ).pow(2).mean()
             arr_reward.append((old_diff_embed - diff_embed)*1000)
 
-            imgloss_array.append(10*diff_embed.data[0])
+            imgloss_array.append(10*diff_embed.item())
             old_diff_embed.data.copy_(diff_embed.data)
 
             ### gradients form diff_embed shouldn't weighted by the discount factor
@@ -292,7 +288,7 @@ def train(epoch,k_curr):
             G[T-1] = arr_reward[T-1]
             for t in reversed(range(T-1)):
                 G[t] = opt.gamma*G[t+1] + arr_reward[t]
-            Gtensor = torch.cat(G).detach()
+            Gtensor = torch.stack(G).detach()
 
             fufu = [[-arr_grad_netGA[i][j]*Gtensor[i]+imgloss_arr_grad_netGA[i][j] for i in range(0,10-k_curr)] for j in range(len(arr_grad_netGA[0]))]        
             grad_ga = [torch.sum(torch.stack(fufu[j]),dim=0) for j in range(len(arr_grad_netGA[0]))]
@@ -320,12 +316,12 @@ def train(epoch,k_curr):
             for idx,p in enumerate(qbots[qbot_idx][1].parameters()):
                 p.grad = grad_wq[idx]
 
-            torch.nn.utils.clip_grad_norm(abots[abot_idx][0].parameters(),2)
-            torch.nn.utils.clip_grad_norm(abots[abot_idx][1].parameters(),2)
-            torch.nn.utils.clip_grad_norm(abots[abot_idx][2].parameters(),2)
-            torch.nn.utils.clip_grad_norm(qbots[qbot_idx][0].parameters(),2)
-            torch.nn.utils.clip_grad_norm(qbots[qbot_idx][1].parameters(),2)
-            torch.nn.utils.clip_grad_norm(qbots[qbot_idx][2].parameters(),2)
+            torch.nn.utils.clip_grad_norm_(abots[abot_idx][0].parameters(),2)
+            torch.nn.utils.clip_grad_norm_(abots[abot_idx][1].parameters(),2)
+            torch.nn.utils.clip_grad_norm_(abots[abot_idx][2].parameters(),2)
+            torch.nn.utils.clip_grad_norm_(qbots[qbot_idx][0].parameters(),2)
+            torch.nn.utils.clip_grad_norm_(qbots[qbot_idx][1].parameters(),2)
+            torch.nn.utils.clip_grad_norm_(qbots[qbot_idx][2].parameters(),2)
 
             optimizerQbotRLarr[qbot_idx].step()
             optimizerAbotRLarr[abot_idx].step()
@@ -349,16 +345,11 @@ def evaluate():
     iteration = 0
     global img_input
     prev_time = time.time()
-    # mean_rank = np.zeros((len(dataloader_val)*opt.batch_size,11))
+    mean_rank = np.zeros((len(dataloader_val)*opt.batch_size,11))
 
-    imgs_tensor = Variable(torch.FloatTensor(imgs))
+    imgs_tensor = torch.FloatTensor(imgs)
     imgs_tensor = imgs_tensor.cuda()
 
-    #Used to track metrics
-    # mean_ranks = torch.zeros(10)
-    # mean_rec_ranks = torch.zeros(10)
-    # q_perplex = torch.zeros(10)
-    # a_perplex = torch.zeros(10)
     n_elts = 0
     save_tmp = []
 
@@ -404,16 +395,12 @@ def evaluate():
             UNK_ques_input.data.resize_((1, batch_size)).fill_(vocab_size) # 1x100
             Q,logprobQ = qbots[0][2].sample_differentiable(qbots[0][1],UNK_ques_input,fact_hiddenQ, sample_opt) # Q is 100x16, same logprobQ
 
-            # sample_opt_per = {'beam_size':1, 'seq_length':17, 'sample_max':1}
-            # Q_per,logprobQ_per = qbots[0][2].sample_differentiable(qbots[0][1],UNK_ques_input,fact_hiddenQ, sample_opt_per) # Q is 100x16, same logprobQ
-            # q_perplex[rnd] += compute_perplexity_batch(logprobQ_per, is_log=True).data[0]
-
             Q = Q.data.t()
             Q = Q[:-1]
             Q_idx_search = (Q==vocab_size)
             _, Q_idx_search = torch.max(Q_idx_search,dim=0)
             Q_rev = reverse_padding(Q.t(), Q_idx_search.squeeze()).t()
-            ques_emb_g = abots[0][1](Variable(Q_rev), format = 'index') # 16x100x300
+            ques_emb_g = abots[0][1](Q_rev, format = 'index') # 16x100x300
 
             featG,ques_hidden1 = abots[0][0](ques_emb_g,his_emb_g,img_input,\
                                       ques_hidden1, hist_hidden1, rnd+1)
@@ -423,21 +410,15 @@ def evaluate():
             sample_opt = {'beam_size':1, 'seq_length':9, 'sample_max':0}
             A, logprobsA = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt) # 100x9,100x9
             
-            # A_per, logprobsA_per = abots[0][2].sample_differentiable(abots[0][1], UNK_ans_input, ques_hidden1, sample_opt_per) # 100x9,100x9
-            # a_perplex[rnd] += compute_perplexity_batch(logprobsA_per, is_log=True).data[0]
-
-            # mrank, m_rec = abots[0][2].sample_opt_eval(abots[0][1], UNK_ans_input, ques_hidden1, answerT, opt_answerT, rnd, sample_opt) # 100x9,100x9
-            # mean_ranks[rnd] += mrank
-            # mean_rec_ranks[rnd] += m_rec
-
             A = A.data.t()
             A = A[:-1]
 
             A_idx_search = (A==vocab_size)
             _, A_idx_search = torch.max(A_idx_search,dim=0)
-            QA = Variable(create_joint_seq(Q.t(), A.t(), Q_idx_search.squeeze() , A_idx_search.squeeze()).t())
+            QA = create_joint_seq(Q.t(), A.t(), Q_idx_search.squeeze() , A_idx_search.squeeze()).t()
             fact_embA = abots[0][1](QA,format='index') # float 25x100x300
             fact_embQ = qbots[0][1](QA,format='index') # float 25x100x300
+            
             # do this concatenation properly by having all non-UNK tokens first followed by UNKs
             his_embQ = torch.cat((his_embQ.view(his_length, batch_size, -1, opt.ninp),fact_embQ.view(his_length, batch_size, 1, opt.ninp)),dim=2).view(his_length,-1,opt.ninp) # float <N>x100x300
             his_emb_g = torch.cat((his_emb_g.view(his_length, batch_size, -1, opt.ninp),fact_embA.view(his_length, batch_size, 1, opt.ninp)),dim=2).view(his_length,-1,opt.ninp) # float <N2>x100x300
@@ -458,30 +439,26 @@ def evaluate():
               save_tmp[j].append({'sample_ques':ques_sample_txt[j], \
                        'sample_ans':ans_sample_txt[j], 'rnd':rnd})
 
-        np.save(save_path+'/predictions'+str(opt.num_qbots)+'Q'+str(opt.num_abots)+'A.npy',save_tmp)
-        sys.exit(0)
-
+        # If you want to save the predictions in a npy file, uncomment the next line
+        # np.save(save_path+'/predictions'+str(opt.num_qbots)+'Q'+str(opt.num_abots)+'A.npy',save_tmp)
+        
         iteration+=1
-        # reward_dict = {}
-        # for i, elt in enumerate(embed_array):
-        #   for img_no in range(elt.size(0)):
-        #       img = elt[img_no]
-        #       l2_dist = torch.sum(((imgs_tensor - img) ** 2), 1)
-        #       img_diff = torch.sum((img-img_input[img_no])**2)
-        #       found_rank = torch.sum((l2_dist <= img_diff).float())
-        #       mean_rank[(iteration-1)*opt.batch_size+img_no,i] += found_rank
+        
+        # For obtaining image retrieval percentile
+        reward_dict = {}
+        for i, elt in enumerate(embed_array):
+          for img_no in range(elt.size(0)):
+              img = elt[img_no]
+              l2_dist = torch.sum(((imgs_tensor - img) ** 2), 1)
+              img_diff = torch.sum((img-img_input[img_no])**2)
+              found_rank = torch.sum((l2_dist <= img_diff).float())
+              mean_rank[(iteration-1)*opt.batch_size+img_no,i] += found_rank
 
-        if iteration%20==0:
+        if iteration%2==0:
           print("Done with Batch # {} | Av. Time Per Batch: {:.3f}s".format(iteration,(time.time()-prev_time)/20))
           prev_time = time.time()
-          # mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
-          # print("MRR: ",mean_rec_rank_final)
-          # print("Image Retrieval Rank {}".format(mean_rank[:(iteration-1)*opt.batch_size+img_no].mean(axis=0)))
+          print("Image Retrieval Rank {}".format(mean_rank[:(iteration-1)*opt.batch_size+img_no].mean(axis=0)))
 
-    # mean_rank_final = mean_ranks/ float(n_elts)
-    # mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
-    # np.save('mean_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank_final.cpu().numpy())
-    # np.save('MRR'+str(opt.num_qbots)+str(opt.num_abots),mean_rec_rank_final.cpu().numpy())
     np.save('image_retrieval_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank)
     return
 
@@ -571,19 +548,19 @@ if opt.cuda: # ship to cuda, if has GPU
     critLM.cuda(), critImg.cuda()
 
 ################
-img_input = torch.FloatTensor(opt.batch_size)
-img_input1 = torch.FloatTensor(opt.batch_size)
-cap_input = torch.LongTensor(opt.batch_size)
-ques = torch.LongTensor(ques_length, opt.batch_size)
-ques_input = torch.LongTensor(ques_length, opt.batch_size)
-his_input = torch.LongTensor(his_length, opt.batch_size)
-fact_input = torch.LongTensor(ques_length+ans_length,opt.batch_size)
-ans_input = torch.LongTensor(ans_length, opt.batch_size)
-ans_target = torch.LongTensor(ans_length, opt.batch_size)
-wrong_ans_input = torch.LongTensor(ans_length, opt.batch_size)
-UNK_ans_input = torch.LongTensor(1, opt.batch_size)
-UNK_ques_input = torch.LongTensor(1, opt.batch_size)
-ques_target = torch.LongTensor(ques_length,opt.batch_size)
+img_input = torch.FloatTensor(opt.batch_size).requires_grad_()
+img_input1 = torch.FloatTensor(opt.batch_size).requires_grad_()
+cap_input = torch.LongTensor(opt.batch_size).requires_grad_()
+ques = torch.LongTensor(ques_length, opt.batch_size).requires_grad_()
+ques_input = torch.LongTensor(ques_length, opt.batch_size).requires_grad_()
+his_input = torch.LongTensor(his_length, opt.batch_size).requires_grad_()
+fact_input = torch.LongTensor(ques_length+ans_length,opt.batch_size).requires_grad_()
+ans_input = torch.LongTensor(ans_length, opt.batch_size).requires_grad_()
+ans_target = torch.LongTensor(ans_length, opt.batch_size).requires_grad_()
+wrong_ans_input = torch.LongTensor(ans_length, opt.batch_size).requires_grad_()
+UNK_ans_input = torch.LongTensor(1, opt.batch_size).requires_grad_()
+UNK_ques_input = torch.LongTensor(1, opt.batch_size).requires_grad_()
+ques_target = torch.LongTensor(ques_length,opt.batch_size).requires_grad_()
 
 if opt.cuda:
     ques, ques_input, his_input, img_input, img_input1, cap_input = ques.cuda(), ques_input.cuda(), his_input.cuda(), img_input.cuda(), img_input.cuda(), cap_input.cuda()
@@ -593,18 +570,6 @@ if opt.cuda:
     UNK_ques_input = UNK_ques_input.cuda()
     fact_input = fact_input.cuda()
 
-ques = Variable(ques)
-ques_target = Variable(ques_target)
-fact_input = Variable(fact_input)
-ques_input = Variable(ques_input)
-img_input = Variable(img_input)
-img_input1 = Variable(img_input1)
-his_input = Variable(his_input)
-cap_input = Variable(cap_input)
-ans_input = Variable(ans_input)
-ans_target = Variable(ans_target)
-UNK_ques_input = Variable(UNK_ques_input)
-UNK_ans_input = Variable(UNK_ans_input)
 ##################
 
 if not opt.eval:
@@ -640,14 +605,14 @@ if not opt.eval:
     k_curr = 10 if opt.start_curr is None else opt.start_curr+1
     for epoch in range(opt.start_epoch+1, opt.niter):
         if opt.k_curr is not None:
-            assert not opt.scratch and not opt.curr and opt.start_curr is None, "Don't provide any curr flags if you want training with fixed K"
+            assert not opt.scratch and not opt.curr and opt.start_curr is None, "Don't provide any --curr flags if you want training with fixed K"
             k_curr = opt.k_curr
         elif opt.scratch:
-            assert opt.start_curr is None, "Don't give start_curr flag if you want to train from scratch"
+            assert opt.start_curr is None, "Don't give --start_curr flag if you want to train from scratch"
             if epoch>15:
                 k_curr -= 1
         elif opt.curr or opt.start_curr is not None:
-            assert not opt.scratch and opt.k_curr is None, "Don't give scratch or k_curr flag if you want curriculum training"
+            assert not opt.scratch and opt.k_curr is None, "Don't give --scratch or --k_curr flag if you want curriculum training"
             k_curr -= 1/3
         else:
             print("No Training Method provided, assuming default is curriculum starting from k=10")
@@ -680,5 +645,5 @@ else:
     for k in range(opt.num_abots):
         abots[k][0].eval(),abots[k][1].eval(),abots[k][2].eval()
     for k in range(opt.num_qbots):
-      qbots[k][0].eval(),qbots[k][1].eval(),qbots[k][2].eval()
+        qbots[k][0].eval(),qbots[k][1].eval(),qbots[k][2].eval()
     evaluate()

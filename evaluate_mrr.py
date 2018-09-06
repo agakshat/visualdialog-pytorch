@@ -14,7 +14,6 @@ import copy
 
 import torch
 import torch.optim as optim
-from torch.autograd import Variable
 
 from utils.tools import repackage_hidden, decode_txt, sample_batch_neg, create_joint_seq, \
                     create_joint_seq_gt, reverse_padding, load_my_state_dict, compute_perplexity_batch
@@ -39,7 +38,7 @@ def evaluate():
     prev_time = time.time()
     mean_rank = np.zeros((len(dataloader_val)*opt.batch_size,11))
 
-    imgs_tensor = Variable(torch.FloatTensor(imgs))
+    imgs_tensor = torch.FloatTensor(imgs)
     imgs_tensor = imgs_tensor.cuda()
 
     #Used to track metrics
@@ -88,7 +87,7 @@ def evaluate():
         embed_array.append(img_embedQ)
         num_samples += batch_size
         n_elts += 1
-        # print("cap: ",decode_txt(itow,cap))
+
         for rnd in range(0,10):
             sample_opt = {'beam_size':1, 'seq_length':17, 'sample_max':0}
             _,fact_hiddenQ = qbots[0][2](encoder_featQ.view(1,-1,opt.ninp), fact_hiddenQ)
@@ -104,10 +103,8 @@ def evaluate():
             Q_idx_search = (Q==vocab_size)
             _, Q_idx_search = torch.max(Q_idx_search,dim=0)
             Q_rev = reverse_padding(Q.t(), Q_idx_search.squeeze()).t()
-            ques_emb_g = abots[0][1](Variable(Q_rev), format = 'index') # 16x100x300
-            # ques_tensor = question_target[:,rnd,:].t()
-            # ques.data.resize_(ques_tensor.size()).copy_(ques_tensor)
-            # ques_emb_g = abots[0][1](ques, format = 'index')
+            ques_emb_g = abots[0][1](Q_rev, format = 'index') # 16x100x300
+
             featG,ques_hidden1 = abots[0][0](ques_emb_g,his_emb_g,img_input,\
                                       ques_hidden1, hist_hidden1, rnd+1)
             # featG is float 100x300, ques_hidden1 is tuple of 2 1x100x512 floats
@@ -132,16 +129,12 @@ def evaluate():
 
             A_idx_search = (A==vocab_size)
             _, A_idx_search = torch.max(A_idx_search,dim=0)
-            QA = Variable(create_joint_seq(Q.t(), A.t(), Q_idx_search.squeeze() , A_idx_search.squeeze()).t())
+            QA = create_joint_seq(Q.t(), A.t(), Q_idx_search.squeeze() , A_idx_search.squeeze()).t()
             fact_embA = abots[0][1](QA,format='index') # float 25x100x300
             fact_embQ = qbots[0][1](QA,format='index') # float 25x100x300
             # do this concatenation properly by having all non-UNK tokens first followed by UNKs
             his_embQ = torch.cat((his_embQ.view(his_length, batch_size, -1, opt.ninp),fact_embQ.view(his_length, batch_size, 1, opt.ninp)),dim=2).view(his_length,-1,opt.ninp) # float <N>x100x300
             his_emb_g = torch.cat((his_emb_g.view(his_length, batch_size, -1, opt.ninp),fact_embA.view(his_length, batch_size, 1, opt.ninp)),dim=2).view(his_length,-1,opt.ninp) # float <N2>x100x300
-
-            # his = history[:,:rnd+1,:].clone().view(-1, his_length).t()
-            # his_input.data.resize_(his.size()).copy_(his)
-            # his_emb_g = abots[0][1](his_input, format = 'index')
             
             ques_hidden1 = repackage_hidden(ques_hidden1, batch_size)
             hist_hidden1 = repackage_hidden(hist_hidden1, his_emb_g.size(1))
@@ -156,21 +149,7 @@ def evaluate():
             ans_sample_txt = decode_txt(itow, A)
             ques_sample_txt = decode_txt(itow, Q)
 
-            for j in range(batch_size):
-              save_tmp[j].append({'sample_ques':ques_sample_txt[j], \
-                      'sample_ans':ans_sample_txt[j], 'rnd':rnd})
-
-        np.save(save_path+'/save_tmp',save_tmp)
         iteration+=1
-        # reward_dict = {}
-        # for i, elt in enumerate(embed_array):
-        #   for img_no in range(elt.size(0)):
-        #       img = elt[img_no]
-        #       l2_dist = torch.sum(((imgs_tensor - img) ** 2), 1)
-        #       img_diff = torch.sum((img-img_input[img_no])**2)
-        #       found_rank = torch.sum((l2_dist <= img_diff).float())
-        #       mean_rank[(iteration-1)*opt.batch_size+img_no,i] += found_rank
-        # print("Rank Mean {}".format(mean_rank[:(iteration-1)*opt.batch_size+img_no].mean(axis=0)))
         if iteration%20==0:
           print("Done with Batch # {} | Av. Time Per Batch: {:.3f}s".format(iteration,(time.time()-prev_time)/20))
           prev_time = time.time()
@@ -178,6 +157,7 @@ def evaluate():
           mean_rank_final = mean_ranks/ float(n_elts)
           print("MRR: ",mean_rec_rank_final,torch.mean(mean_rec_rank_final))
           print("mean_rank",mean_rank_final,torch.mean(mean_rank_final))
+    
     mean_rank_final = mean_ranks/ float(n_elts)
     mean_rec_rank_final = mean_rec_ranks/ float(n_elts)
     r1_final = 100*r1/float(num_samples)
@@ -188,7 +168,6 @@ def evaluate():
     np.save('r1'+str(opt.num_qbots)+str(opt.num_abots),r1_final.cpu().numpy())
     np.save('r5'+str(opt.num_qbots)+str(opt.num_abots),r5_final.cpu().numpy())
     np.save('r10'+str(opt.num_qbots)+str(opt.num_abots),r10_final.cpu().numpy())
-    # np.save('image_retrieval_rank'+str(opt.num_qbots)+str(opt.num_abots),mean_rank)
     return
 
 
@@ -277,19 +256,19 @@ if opt.cuda: # ship to cuda, if has GPU
     critLM.cuda(), critImg.cuda()
 
 ################
-img_input = torch.FloatTensor(opt.batch_size)
-img_input1 = torch.FloatTensor(opt.batch_size)
-cap_input = torch.LongTensor(opt.batch_size)
-ques = torch.LongTensor(ques_length, opt.batch_size)
-ques_input = torch.LongTensor(ques_length, opt.batch_size)
-his_input = torch.LongTensor(his_length, opt.batch_size)
-fact_input = torch.LongTensor(ques_length+ans_length,opt.batch_size)
-ans_input = torch.LongTensor(ans_length, opt.batch_size)
-ans_target = torch.LongTensor(ans_length, opt.batch_size)
-wrong_ans_input = torch.LongTensor(ans_length, opt.batch_size)
-UNK_ans_input = torch.LongTensor(1, opt.batch_size)
-UNK_ques_input = torch.LongTensor(1, opt.batch_size)
-ques_target = torch.LongTensor(ques_length,opt.batch_size)
+img_input = torch.FloatTensor(opt.batch_size).requires_grad_()
+img_input1 = torch.FloatTensor(opt.batch_size).requires_grad_()
+cap_input = torch.LongTensor(opt.batch_size).requires_grad_()
+ques = torch.LongTensor(ques_length, opt.batch_size).requires_grad_()
+ques_input = torch.LongTensor(ques_length, opt.batch_size).requires_grad_()
+his_input = torch.LongTensor(his_length, opt.batch_size).requires_grad_()
+fact_input = torch.LongTensor(ques_length+ans_length,opt.batch_size).requires_grad_()
+ans_input = torch.LongTensor(ans_length, opt.batch_size).requires_grad_()
+ans_target = torch.LongTensor(ans_length, opt.batch_size).requires_grad_()
+wrong_ans_input = torch.LongTensor(ans_length, opt.batch_size).requires_grad_()
+UNK_ans_input = torch.LongTensor(1, opt.batch_size).requires_grad_()
+UNK_ques_input = torch.LongTensor(1, opt.batch_size).requires_grad_()
+ques_target = torch.LongTensor(ques_length,opt.batch_size).requires_grad_()
 
 if opt.cuda:
     ques, ques_input, his_input, img_input, img_input1, cap_input = ques.cuda(), ques_input.cuda(), his_input.cuda(), img_input.cuda(), img_input.cuda(), cap_input.cuda()
@@ -299,18 +278,6 @@ if opt.cuda:
     UNK_ques_input = UNK_ques_input.cuda()
     fact_input = fact_input.cuda()
 
-ques = Variable(ques)
-ques_target = Variable(ques_target)
-fact_input = Variable(fact_input)
-ques_input = Variable(ques_input)
-img_input = Variable(img_input)
-img_input1 = Variable(img_input1)
-his_input = Variable(his_input)
-cap_input = Variable(cap_input)
-ans_input = Variable(ans_input)
-ans_target = Variable(ans_target)
-UNK_ques_input = Variable(UNK_ques_input)
-UNK_ans_input = Variable(UNK_ans_input)
 ##################
 
 if not opt.eval:

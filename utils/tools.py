@@ -9,15 +9,15 @@ Some utility Functions.
 """
 
 def repackage_hidden_volatile(h):
-    if type(h) == Variable:
-        return Variable(h.data, volatile=True)
+    if type(h) == torch.Tensor:
+        return h.requires_grad_(False)
     else:
         return tuple(repackage_hidden_volatile(v) for v in h)
 
 def repackage_hidden(h, batch_size):
     """Wraps hidden states in new Variables, to detach them from their history."""
-    if type(h) == Variable:
-        return Variable(h.data.resize_(h.size(0), batch_size, h.size(2)).zero_())
+    if type(h) == torch.Tensor:
+        return h.detach().resize_(h.size(0), batch_size, h.size(2)).zero_()
     else:
         return tuple(repackage_hidden(v, batch_size) for v in h)
 

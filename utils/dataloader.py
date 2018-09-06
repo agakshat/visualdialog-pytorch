@@ -28,7 +28,6 @@ class train(data.Dataset): # torch wrapper
         # load the data.
         f = h5py.File(input_img_h5, 'r')
 
-
         f2 = h5py.File('/serverdata/akshat/data/other_data/data_img.h5')['images_'+split]
         f2ids = json.load(open('/serverdata/akshat/data/other_data/visdial_params.json'))['unique_img_'+split]
         f2idsa = np.argsort(np.array(f2ids))
