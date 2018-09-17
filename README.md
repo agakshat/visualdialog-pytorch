@@ -37,7 +37,7 @@ wget https://filebox.ece.vt.edu/~jiasenlu/codeRelease/visDial.pytorch/data/visdi
 mkdir v09
 cd v09
 wget https://computing.ece.vt.edu/~abhshkdz/visdial/data/v0.9/visdial_params.json
-wget https://computing.ece.vt.edu/~abhshkdz/visdial/data/v0.9/data_img_vgg16_pool5.h5
+wget https://computing.ece.vt.edu/~abhshkdz/visdial/data/v0.9/data_img_vgg16_relu7.h5
 
 mkdir save
 ```

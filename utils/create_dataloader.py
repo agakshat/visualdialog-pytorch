@@ -5,7 +5,7 @@ def create_dataloader(opt):
   opt.input_img_h5 = opt.data_dir +  opt.input_img_h5
   opt.input_ques_h5 = opt.data_dir + opt.input_ques_h5
   opt.input_json = opt.data_dir + opt.input_json
-  v09_img_file = opt.v09_data_dir + 'data_img_vgg16_pool5.h5'
+  v09_img_file = opt.v09_data_dir + 'data_img_vgg16_relu7.h5'
   # v09_img_file = opt.v09_data_dir + 'data_img.h5'
   v09_param_file = opt.v09_data_dir + 'visdial_params.json'
   dataset = dl.train(input_img_h5=opt.input_img_h5, input_ques_h5=opt.input_ques_h5,
