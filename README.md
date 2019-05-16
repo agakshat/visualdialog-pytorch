@@ -6,11 +6,12 @@ Carnegie Mellon University, University of Pittsburgh
 
 This repository contains a PyTorch implementation for our arXiv paper [1808.04359](https://arxiv.org/abs/1808.04359) on Community Regularization for Visually Grounded Dialog. The task requires goal-oriented exchange of information in natural language, however asking the agents to maximize information exchange while requiring them to adhere to the rules of human languages is an ill-posed optimization problem. Our solution, Community Regularization, involves each agent interacting with and learning from multiple agents, which results in more grammatically correct, relevant and coherent dialog without sacrificing information exchange. If you find this work useful, please cite our paper using the following BibTeX:
 
-    @article{agarwal2018community,
-    title={Community Regularization of Visually-Grounded Dialog},
-    author={Agarwal, Akshat and Gurumurthy, Swaminathan and Sharma, Vasu and Lewis, Mike and Sycara, Katia},
-    journal={arXiv preprint arXiv:1808.04359},
-    year={2018}
+    @inproceedings{agarwal2018community,
+      title={Community Regularization of Visually-Grounded Dialog},
+      author={Agarwal, Akshat and Gurumurthy, Swaminathan and Sharma, Vasu and Lewis, Michael and Sycara, Katia},
+      booktitle={Proceedings of the 18th International Conference on Autonomous Agents and Multiagent Systems (AAMAS 2019), Montreal, Canada},
+      year={2019},
+      organization={IFAAMAS}
     }
 
 ## Installation and Downloading Data
